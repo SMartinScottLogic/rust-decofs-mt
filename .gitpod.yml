@@ -1,0 +1,4 @@
+image:
+  file: docker/Dockerfile
+tasks:
+  - init: cargo build
