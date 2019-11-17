@@ -203,7 +203,7 @@ impl FilesystemMT for DecoFS {
                     let filetype = DecoFS::stat_to_filetype(&stat);
 
                     entries.push(DirectoryEntry {
-                        name: real_path.as_os_str().to_os_string(),
+                        name: real_path.file_name().unwrap().to_os_string(),
                         kind: filetype,
                     });
                 },
