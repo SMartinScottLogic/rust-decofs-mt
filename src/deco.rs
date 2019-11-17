@@ -195,6 +195,7 @@ impl FilesystemMT for DecoFS {
             match entry {
                 Ok(entry) => {
                     let path = entry.path();
+                    debug!("readdir: {:?} {:?} {:?}", path, real, entry.path());
                     let real_path = self.real_path(path.as_path());
                     let stat = match self.stat(real_path.as_os_str()) {
                         Ok(stat) => stat,
