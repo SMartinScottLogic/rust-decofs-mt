@@ -7,4 +7,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-fuse_mt = "0.5.0"    # A higher-level FUSE filesystem library with multi-threading and inode->path translation.
+libc = "0.2.54"             # Raw FFI bindings to platform libraries like libc.
+log = "0.4.8"               # A lightweight logging facade for Rust
+chrono = "0.4.9"            # Date and time library for Rust
+# A higher-level FUSE filesystem library with multi-threading and inode->path translation.
+fuse_mt = { git = "https://github.com/wfraser/fuse-mt"}
