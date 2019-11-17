@@ -1,8 +1,8 @@
 use libc::{ENOENT};
-use std::{fs};
+use std::{fs, io};
 use std::ffi::{CString, OsStr, OsString};
 use std::os::unix::ffi::OsStrExt;
-use fuse_mt::{FilesystemMT, FileType, DirectoryEntry, RequestInfo, ResultEmpty, ResultOpen, ResultReaddir};
+use fuse_mt::{FilesystemMT, FileType, DirectoryEntry, RequestInfo, ResultEmpty, ResultOpen, ResultReaddir, ResultStatfs, Statfs};
 use std::path::{Path, PathBuf};
 use std::mem::MaybeUninit;
 
@@ -21,13 +21,33 @@ impl DecoFS {
                 .into_os_string()
     }
 
-    fn stat(&self, path: &OsStr) -> libc::stat {
+    fn stat(&self, path: &OsStr) -> io::Result<libc::stat> {
         let mut stat = MaybeUninit::<libc::stat>::uninit();
 
-        let cstr = CString::new(path.as_bytes()).unwrap();
+        let cstr = CString::new(path.as_bytes())?;
         unsafe {
             libc::stat(cstr.as_ptr(), stat.as_mut_ptr()); 
-            stat.assume_init()
+            Ok(stat.assume_init())
+        }
+    }
+
+    fn statfs_real(&self, path: &OsStr) -> io::Result<libc::statfs> {
+        let mut stat = MaybeUninit::<libc::statfs>::zeroed();
+
+        let cstr = CString::new(path.as_bytes())?;
+        let result = unsafe {
+            libc::statfs(cstr.as_ptr(), stat.as_mut_ptr())
+        };
+
+        if -1 == result {
+            let e = io::Error::last_os_error();
+            error!("statfs({:?}): {}", path, e);
+            Err(e)
+        } else {
+            let stat = unsafe {
+                stat.assume_init()
+            };
+            Ok(stat)
         }
     }
 
@@ -44,6 +64,19 @@ impl DecoFS {
         }
     }
 
+    fn statfs_to_fuse(statfs: libc::statfs) -> Statfs {
+        Statfs {
+            blocks: statfs.f_blocks as u64,
+            bfree: statfs.f_bfree as u64,
+            bavail: statfs.f_bavail as u64,
+            files: statfs.f_files as u64,
+            ffree: statfs.f_ffree as u64,
+            bsize: statfs.f_bsize as u32,
+            namelen: statfs.f_namelen as u32,
+            frsize: statfs.f_frsize as u32,
+        }
+    }
+
     fn stat_to_filetype(stat: &libc::stat) -> FileType {
         DecoFS::mode_to_filetype(stat.st_mode)
     }
@@ -57,6 +90,16 @@ impl FilesystemMT for DecoFS {
 
     fn destroy(&self, _req: RequestInfo) {
         info!("destroy");
+    }
+
+    fn statfs(&self, _req: RequestInfo, path: &Path) -> ResultStatfs {
+        let real = self.real_path(path);
+        debug!("statfs: {:?} {:?}", path, real);
+
+        match self.statfs_real(real.as_os_str()) {
+            Ok(stat) => Ok(DecoFS::statfs_to_fuse(stat)),
+            Err(e) => Err(e.raw_os_error().unwrap_or(ENOENT))
+        }
     }
 
     fn opendir(&self, _req: RequestInfo, path: &Path, _flags: u32) -> ResultOpen {
@@ -79,7 +122,10 @@ impl FilesystemMT for DecoFS {
                 Ok(entry) => {
                     let path = entry.path();
                     let real_path = self.real_path(path.as_path());
-                    let stat = self.stat(real_path.as_os_str());
+                    let stat = match self.stat(real_path.as_os_str()) {
+                        Ok(stat) => stat,
+                        Err(e) => return Err(e.raw_os_error().unwrap_or(ENOENT))
+                    };
                     let filetype = DecoFS::stat_to_filetype(&stat);
 
                     entries.push(DirectoryEntry {
