@@ -2,9 +2,12 @@ use libc::{ENOENT};
 use std::{fs, io};
 use std::ffi::{CString, OsStr, OsString};
 use std::os::unix::ffi::OsStrExt;
-use fuse_mt::{FilesystemMT, FileType, DirectoryEntry, RequestInfo, ResultEmpty, ResultOpen, ResultReaddir, ResultStatfs, Statfs};
+use fuse_mt::{FilesystemMT, FileAttr, FileType, DirectoryEntry, RequestInfo, ResultEmpty, ResultEntry, ResultOpen, ResultReaddir, ResultStatfs, Statfs};
 use std::path::{Path, PathBuf};
 use std::mem::MaybeUninit;
+use time::Timespec;
+
+const TTL: Timespec = Timespec { sec: 1, nsec: 0 };
 
 pub struct DecoFS {
     sourceroot: OsString
@@ -26,15 +29,16 @@ impl DecoFS {
 
         let cstr = CString::new(path.as_bytes())?;
         unsafe {
-            libc::stat(cstr.as_ptr(), stat.as_mut_ptr()); 
+            libc::lstat(cstr.as_ptr(), stat.as_mut_ptr()); 
             Ok(stat.assume_init())
         }
     }
 
-    fn statfs_real(&self, path: &OsStr) -> io::Result<libc::statfs> {
+    fn statfs_real(&self, path: &Path) -> io::Result<libc::statfs> {
+        let real = self.real_path(path);
         let mut stat = MaybeUninit::<libc::statfs>::zeroed();
 
-        let cstr = CString::new(path.as_bytes())?;
+        let cstr = CString::new(real.as_bytes())?;
         let result = unsafe {
             libc::statfs(cstr.as_ptr(), stat.as_mut_ptr())
         };
@@ -49,6 +53,12 @@ impl DecoFS {
             };
             Ok(stat)
         }
+    }
+
+    fn stat_real(&self, path: &Path) -> io::Result<FileAttr> {
+        let real = self.real_path(path);
+        let stat = self.stat(real.as_os_str())?;
+        Ok(DecoFS::stat_to_fuse(stat))
     }
 
     fn mode_to_filetype(mode: libc::mode_t) -> FileType {
@@ -77,8 +87,39 @@ impl DecoFS {
         }
     }
 
+    fn stat_to_fuse(stat: libc::stat) -> FileAttr {
+        // st_mode encodes both the kind and the permissions
+        let kind = DecoFS::mode_to_filetype(stat.st_mode);
+        let perm = (stat.st_mode & 0o7777) as u16;
+
+        FileAttr {
+            size: stat.st_size as u64,
+            blocks: stat.st_blocks as u64,
+            atime: Timespec { sec: stat.st_atime as i64, nsec: stat.st_atime_nsec as i32 },
+            mtime: Timespec { sec: stat.st_mtime as i64, nsec: stat.st_mtime_nsec as i32 },
+            ctime: Timespec { sec: stat.st_ctime as i64, nsec: stat.st_ctime_nsec as i32 },
+            crtime: Timespec { sec: 0, nsec: 0 },
+            kind,
+            perm,
+            nlink: stat.st_nlink as u32,
+            uid: stat.st_uid,
+            gid: stat.st_gid,
+            rdev: stat.st_rdev as u32,
+            flags: 0,
+        }
+    }
+
     fn stat_to_filetype(stat: &libc::stat) -> FileType {
         DecoFS::mode_to_filetype(stat.st_mode)
+    }
+
+    fn stat_fh(fh: u64) -> io::Result<libc::stat> {
+        let mut stat = MaybeUninit::<libc::stat>::uninit();
+
+        unsafe {
+            libc::fstat(fh as libc::c_int, stat.as_mut_ptr()); 
+            Ok(stat.assume_init())
+        }
     }
 }
 
@@ -92,11 +133,25 @@ impl FilesystemMT for DecoFS {
         info!("destroy");
     }
 
-    fn statfs(&self, _req: RequestInfo, path: &Path) -> ResultStatfs {
-        let real = self.real_path(path);
-        debug!("statfs: {:?} {:?}", path, real);
+    fn getattr(&self, _req: RequestInfo, path: &Path, fh: Option<u64>) -> ResultEntry {
+        debug!("getattr: {:?}", path);
+        if let Some(fh) = fh {
+            match DecoFS::stat_fh(fh) {
+                Ok(stat) => Ok((TTL, DecoFS::stat_to_fuse(stat))),
+                Err(e) => Err(e.raw_os_error().unwrap_or(ENOENT))
+            }
+        } else {
+            match self.stat_real(path) {
+                Ok(attr) => Ok((TTL, attr)),
+                Err(e) => Err(e.raw_os_error().unwrap_or(ENOENT))
+            }
+        }
+    }
 
-        match self.statfs_real(real.as_os_str()) {
+    fn statfs(&self, _req: RequestInfo, path: &Path) -> ResultStatfs {
+        debug!("statfs: {:?}", path);
+
+        match self.statfs_real(path) {
             Ok(stat) => Ok(DecoFS::statfs_to_fuse(stat)),
             Err(e) => Err(e.raw_os_error().unwrap_or(ENOENT))
         }

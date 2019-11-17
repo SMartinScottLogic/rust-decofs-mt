@@ -10,5 +10,6 @@ edition = "2018"
 libc = "0.2.54"             # Raw FFI bindings to platform libraries like libc.
 log = "0.4.8"               # A lightweight logging facade for Rust
 chrono = "0.4.9"            # Date and time library for Rust
+time = "0.1.42"             # Utilities for working with time-related functions in Rust.
 # A higher-level FUSE filesystem library with multi-threading and inode->path translation.
 fuse_mt = { git = "https://github.com/wfraser/fuse-mt"}
