@@ -194,9 +194,8 @@ impl FilesystemMT for DecoFS {
         for entry in iter {
             match entry {
                 Ok(entry) => {
-                    let path = entry.path();
-                    debug!("readdir: {:?} {:?} {:?}", path, real, entry.path());
-                    let real_path = self.real_path(path.as_path());
+                    let real_path = entry.path();
+                    debug!("readdir: {:?} {:?}", real, real_path);
                     let stat = match self.stat(real_path.as_os_str()) {
                         Ok(stat) => stat,
                         Err(e) => return Err(e.raw_os_error().unwrap_or(ENOENT))
@@ -204,7 +203,7 @@ impl FilesystemMT for DecoFS {
                     let filetype = DecoFS::stat_to_filetype(&stat);
 
                     entries.push(DirectoryEntry {
-                        name: path.as_os_str().to_os_string(),
+                        name: real_path.as_os_str().to_os_string(),
                         kind: filetype,
                     });
                 },
