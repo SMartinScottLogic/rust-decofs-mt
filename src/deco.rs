@@ -28,9 +28,18 @@ impl DecoFS {
         let mut stat = MaybeUninit::<libc::stat>::uninit();
 
         let cstr = CString::new(path.as_bytes())?;
-        unsafe {
-            libc::lstat(cstr.as_ptr(), stat.as_mut_ptr()); 
-            Ok(stat.assume_init())
+        let result = unsafe {
+            libc::lstat(cstr.as_ptr(), stat.as_mut_ptr())
+        };
+        if -1 == result {
+            let e = io::Error::last_os_error();
+            error!("lstat({:?}): {}", path, e);
+            Err(e)
+        } else {
+            let stat = unsafe {
+                stat.assume_init()
+            };
+            Ok(stat)
         }
     }
 
@@ -116,10 +125,20 @@ impl DecoFS {
     fn stat_fh(fh: u64) -> io::Result<libc::stat> {
         let mut stat = MaybeUninit::<libc::stat>::uninit();
 
-        unsafe {
-            libc::fstat(fh as libc::c_int, stat.as_mut_ptr()); 
-            Ok(stat.assume_init())
+        let result = unsafe {
+            libc::fstat(fh as libc::c_int, stat.as_mut_ptr())
+        };
+        if -1 == result {
+            let e = io::Error::last_os_error();
+            error!("fstat({:?}): {}", fh, e);
+            Err(e)
+        } else {
+            let stat = unsafe {
+                stat.assume_init()
+            };
+            Ok(stat)
         }
+
     }
 }
 
