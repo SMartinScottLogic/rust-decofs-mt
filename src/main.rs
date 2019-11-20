@@ -1,11 +1,13 @@
 use std::{env, io};
 use std::ffi::{OsStr, OsString};
 use chrono::Local;
+use std::path::PathBuf;
 
 #[macro_use]
 extern crate log;
 
 mod deco;
+mod libc_wrapper;
 
 struct ConsoleLogger;
 
@@ -39,7 +41,7 @@ fn main() -> io::Result<()> {
         ::std::process::exit(-1);
     }
     
-    let filesystem = deco::DecoFS::new(args[1].clone());
+    let filesystem = deco::DecoFS::new(PathBuf::from(args[1].clone()));
     let options = ["-o", "rw", "-o", "fsname=decofs", "-o", "allow_other", "-a", "auto_mount"]
         .iter()
         .map(|o| o.as_ref())

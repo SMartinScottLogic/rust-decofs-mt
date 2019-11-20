@@ -1,72 +1,35 @@
 use libc::{ENOENT};
 use std::{fs, io};
-use std::ffi::{CString, OsStr, OsString};
-use std::os::unix::ffi::OsStrExt;
 use fuse_mt::{FilesystemMT, FileAttr, FileType, DirectoryEntry, RequestInfo, ResultEmpty, ResultEntry, ResultOpen, ResultReaddir, ResultStatfs, Statfs};
 use std::path::{Path, PathBuf};
-use std::mem::MaybeUninit;
 use time::Timespec;
+
+use crate::libc_wrapper;
 
 const TTL: Timespec = Timespec { sec: 1, nsec: 0 };
 
 pub struct DecoFS {
-    sourceroot: OsString
+    sourceroot: PathBuf
 }
 
 impl DecoFS {
-    pub fn new(sourceroot: OsString) -> DecoFS {
+    pub fn new(sourceroot: PathBuf) -> DecoFS {
         DecoFS { sourceroot }
     }
 
-    fn real_path(&self, partial: &Path) -> OsString {
+    fn real_path(&self, partial: &Path) -> PathBuf {
         PathBuf::from(&self.sourceroot)
                 .join(partial.strip_prefix("/").unwrap())
-                .into_os_string()
-    }
-
-    fn stat(&self, path: &OsStr) -> io::Result<libc::stat> {
-        let mut stat = MaybeUninit::<libc::stat>::uninit();
-
-        let cstr = CString::new(path.as_bytes())?;
-        let result = unsafe {
-            libc::lstat(cstr.as_ptr(), stat.as_mut_ptr())
-        };
-        if -1 == result {
-            let e = io::Error::last_os_error();
-            error!("lstat({:?}): {}", path, e);
-            Err(e)
-        } else {
-            let stat = unsafe {
-                stat.assume_init()
-            };
-            Ok(stat)
-        }
     }
 
     fn statfs_real(&self, path: &Path) -> io::Result<libc::statfs> {
         let real = self.real_path(path);
-        let mut stat = MaybeUninit::<libc::statfs>::zeroed();
-
-        let cstr = CString::new(real.as_bytes())?;
-        let result = unsafe {
-            libc::statfs(cstr.as_ptr(), stat.as_mut_ptr())
-        };
-
-        if -1 == result {
-            let e = io::Error::last_os_error();
-            error!("statfs({:?}): {}", path, e);
-            Err(e)
-        } else {
-            let stat = unsafe {
-                stat.assume_init()
-            };
-            Ok(stat)
-        }
+        libc_wrapper::statfs(real)
     }
 
     fn stat_real(&self, path: &Path) -> io::Result<FileAttr> {
         let real = self.real_path(path);
-        let stat = self.stat(real.as_os_str())?;
+        let stat = libc_wrapper::lstat(real)?;
         Ok(DecoFS::stat_to_fuse(stat))
     }
 
@@ -121,25 +84,6 @@ impl DecoFS {
     fn stat_to_filetype(stat: &libc::stat) -> FileType {
         DecoFS::mode_to_filetype(stat.st_mode)
     }
-
-    fn stat_fh(fh: u64) -> io::Result<libc::stat> {
-        let mut stat = MaybeUninit::<libc::stat>::uninit();
-
-        let result = unsafe {
-            libc::fstat(fh as libc::c_int, stat.as_mut_ptr())
-        };
-        if -1 == result {
-            let e = io::Error::last_os_error();
-            error!("fstat({:?}): {}", fh, e);
-            Err(e)
-        } else {
-            let stat = unsafe {
-                stat.assume_init()
-            };
-            Ok(stat)
-        }
-
-    }
 }
 
 impl FilesystemMT for DecoFS {
@@ -155,7 +99,7 @@ impl FilesystemMT for DecoFS {
     fn getattr(&self, _req: RequestInfo, path: &Path, fh: Option<u64>) -> ResultEntry {
         debug!("getattr: {:?}", path);
         if let Some(fh) = fh {
-            match DecoFS::stat_fh(fh) {
+            match libc_wrapper::fstat(fh) {
                 Ok(stat) => Ok((TTL, DecoFS::stat_to_fuse(stat))),
                 Err(e) => Err(e.raw_os_error().unwrap_or(ENOENT))
             }
@@ -196,7 +140,7 @@ impl FilesystemMT for DecoFS {
                 Ok(entry) => {
                     let real_path = entry.path();
                     debug!("readdir: {:?} {:?}", real, real_path);
-                    let stat = match self.stat(real_path.as_os_str()) {
+                    let stat = match libc_wrapper::lstat(real_path.clone()) {
                         Ok(stat) => stat,
                         Err(e) => return Err(e.raw_os_error().unwrap_or(ENOENT))
                     };
