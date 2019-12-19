@@ -1,7 +1,8 @@
 use libc::{ENOENT};
-use std::{fs, io};
-use fuse_mt::{FilesystemMT, FileAttr, FileType, DirectoryEntry, RequestInfo, ResultEmpty, ResultEntry, ResultOpen, ResultReaddir, ResultStatfs, Statfs};
+use std::fs;
+use std::io::{self, Read, Write, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use fuse_mt::{FilesystemMT, FileAttr, FileType, DirectoryEntry, RequestInfo, ResultEmpty, ResultEntry, ResultOpen, ResultReaddir, ResultStatfs, Statfs};
 use time::Timespec;
 
 use crate::libc_wrapper;
@@ -166,4 +167,47 @@ impl FilesystemMT for DecoFS {
         debug!("opendir: {:?} {:?} (flags = {:#o})", path, real, _flags);
         Ok(())
     }
+
+    fn open(&self, _req: RequestInfo, path: &Path, flags: u32) -> ResultOpen {
+        let real = self.real_path(path);
+        debug!("open: {:?} {:?} flags={:#x}", path, real, flags);
+
+        match libc_wrapper::open(real, flags as libc::c_int) {
+            Ok(fh) => Ok((fh, flags)),
+            Err(e) => {
+                error!("open({:?}): {}", path, io::Error::from_raw_os_error(e));
+                Err(e)
+            }
+        }
+    }
+
+    fn release(&self, _req: RequestInfo, path: &Path, fh: u64, _flags: u32, _lock_owner: u64, _flush: bool) -> ResultEmpty {
+        debug!("release: {:?}", path);
+        libc_wrapper::close(fh)
+    }
+
+    fn read(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, size: u32, result: impl FnOnce(Result<&[u8], libc::c_int>)) {
+        debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
+        let mut file = unsafe { UnmanagedFile::new(fh) };
+
+        let mut data = Vec::<u8>::with_capacity(size as usize);
+        unsafe { data.set_len(size as usize) };
+
+        if let Err(e) = file.seek(SeekFrom::Start(offset)) {
+            error!("seek({:?}, {}): {}", path, offset, e);
+            result(Err(e.raw_os_error().unwrap_or(ENOENT)));
+            return;
+        }
+        match file.read(&mut data) {
+            Ok(n) => { data.truncate(n); },
+            Err(e) => {
+                error!("read {:?}, {:#x} @ {:#x}: {}", path, size, offset, e);
+                result(Err(e.raw_os_error().unwrap_or(ENOENT)));
+                return;
+            }
+        }
+
+        result(Ok(&data));
+    }
+
 }
