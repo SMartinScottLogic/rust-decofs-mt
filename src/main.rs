@@ -8,6 +8,7 @@ extern crate log;
 
 mod deco;
 mod libc_wrapper;
+mod unmanaged_file;
 
 struct ConsoleLogger;
 

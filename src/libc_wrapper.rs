@@ -4,6 +4,33 @@ use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 
+pub fn open(path: PathBuf, flags: libc::c_int) -> io::Result<u64> {
+        let cstr = CString::new(path.clone().into_os_string().as_bytes())?;
+        let result = unsafe {
+            libc::open(cstr.as_ptr(), flags)
+        };
+        if -1 == result {
+            let e = io::Error::last_os_error();
+            error!("lstat({:?}): {}", path, e);
+            Err(e)
+        } else {
+            Ok(result as u64)
+        }
+}
+
+pub fn close(fh: u64) -> io::Result<i32> {
+    let result = unsafe {
+        libc::close(fh as libc::c_int)
+    };
+    if -1 == result {
+        let e = io::Error::last_os_error();
+        error!("close({:?}: {}", fh, e);
+        Err(e)
+    } else {
+        Ok(0)
+    }
+}
+
 pub fn fstat(fh: u64) -> io::Result<libc::stat> {
         let mut stat = MaybeUninit::<libc::stat>::uninit();
 

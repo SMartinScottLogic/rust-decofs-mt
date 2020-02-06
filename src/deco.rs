@@ -6,6 +6,7 @@ use fuse_mt::{FilesystemMT, FileAttr, FileType, DirectoryEntry, RequestInfo, Res
 use time::Timespec;
 
 use crate::libc_wrapper;
+use crate::unmanaged_file;
 
 const TTL: Timespec = Timespec { sec: 1, nsec: 0 };
 
@@ -175,20 +176,26 @@ impl FilesystemMT for DecoFS {
         match libc_wrapper::open(real, flags as libc::c_int) {
             Ok(fh) => Ok((fh, flags)),
             Err(e) => {
-                error!("open({:?}): {}", path, io::Error::from_raw_os_error(e));
-                Err(e)
+                error!("readdir: {:?}: {}", path, e);
+                return Err(e.raw_os_error().unwrap_or(ENOENT));
             }
         }
     }
 
     fn release(&self, _req: RequestInfo, path: &Path, fh: u64, _flags: u32, _lock_owner: u64, _flush: bool) -> ResultEmpty {
         debug!("release: {:?}", path);
-        libc_wrapper::close(fh)
+        match libc_wrapper::close(fh) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                error!("open({:?}): {}", path, e);
+                return Err(e.raw_os_error().unwrap_or(ENOENT));
+            }
+        }
     }
 
     fn read(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, size: u32, result: impl FnOnce(Result<&[u8], libc::c_int>)) {
         debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
-        let mut file = unsafe { UnmanagedFile::new(fh) };
+        let mut file = unsafe { unmanaged_file::UnmanagedFile::new(fh) };
 
         let mut data = Vec::<u8>::with_capacity(size as usize);
         unsafe { data.set_len(size as usize) };
