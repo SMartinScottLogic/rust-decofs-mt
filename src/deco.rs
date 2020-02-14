@@ -26,7 +26,7 @@ impl DecoFS {
 
     fn statfs_real(&self, path: &Path) -> io::Result<libc::statfs> {
         let real = self.real_path(path);
-        libc_wrapper::statfs(real)
+        libc_wrapper::statfs(&real)
     }
 
     fn stat_real(&self, path: &Path) -> io::Result<FileAttr> {
