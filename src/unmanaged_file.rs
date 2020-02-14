@@ -8,8 +8,8 @@ pub struct UnmanagedFile {
 }
 
 impl UnmanagedFile {
-    pub unsafe fn new(fd: u64) -> UnmanagedFile {
-        UnmanagedFile {
+    pub unsafe fn new(fd: u64) -> Self {
+        Self {
             inner: Some(File::from_raw_fd(fd as i32))
         }
     }

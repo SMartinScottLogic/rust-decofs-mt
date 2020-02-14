@@ -15,8 +15,8 @@ pub struct DecoFS {
 }
 
 impl DecoFS {
-    pub fn new(sourceroot: PathBuf) -> DecoFS {
-        DecoFS { sourceroot }
+    pub fn new(sourceroot: PathBuf) -> Self {
+        Self { sourceroot }
     }
 
     fn real_path(&self, partial: &Path) -> PathBuf {
@@ -31,8 +31,8 @@ impl DecoFS {
 
     fn stat_real(&self, path: &Path) -> io::Result<FileAttr> {
         let real = self.real_path(path);
-        let stat = libc_wrapper::lstat(real)?;
-        Ok(DecoFS::stat_to_fuse(stat))
+        let stat = libc_wrapper::lstat(&real)?;
+        Ok(Self::stat_to_fuse(stat))
     }
 
     fn mode_to_filetype(mode: libc::mode_t) -> FileType {
@@ -84,7 +84,7 @@ impl DecoFS {
     }
 
     fn stat_to_filetype(stat: &libc::stat) -> FileType {
-        DecoFS::mode_to_filetype(stat.st_mode)
+        Self::mode_to_filetype(stat.st_mode)
     }
 }
 
@@ -102,7 +102,7 @@ impl FilesystemMT for DecoFS {
         debug!("getattr: {:?}", path);
         if let Some(fh) = fh {
             match libc_wrapper::fstat(fh) {
-                Ok(stat) => Ok((TTL, DecoFS::stat_to_fuse(stat))),
+                Ok(stat) => Ok((TTL, Self::stat_to_fuse(stat))),
                 Err(e) => Err(e.raw_os_error().unwrap_or(ENOENT))
             }
         } else {
@@ -117,14 +117,14 @@ impl FilesystemMT for DecoFS {
         debug!("statfs: {:?}", path);
 
         match self.statfs_real(path) {
-            Ok(stat) => Ok(DecoFS::statfs_to_fuse(stat)),
+            Ok(stat) => Ok(Self::statfs_to_fuse(stat)),
             Err(e) => Err(e.raw_os_error().unwrap_or(ENOENT))
         }
     }
 
-    fn opendir(&self, _req: RequestInfo, path: &Path, _flags: u32) -> ResultOpen {
+    fn opendir(&self, _req: RequestInfo, path: &Path, flags: u32) -> ResultOpen {
         let real = self.real_path(path);
-        debug!("opendir: {:?} {:?} (flags = {:#o})", path, real, _flags);
+        debug!("opendir: {:?} {:?} (flags = {:#o})", path, real, flags);
         Ok((0,0))
     }
 
@@ -142,7 +142,7 @@ impl FilesystemMT for DecoFS {
                 Ok(entry) => {
                     let real_path = entry.path();
                     debug!("readdir: {:?} {:?}", real, real_path);
-                    let stat = match libc_wrapper::lstat(real_path.clone()) {
+                    let stat = match libc_wrapper::lstat(&real_path) {
                         Ok(stat) => stat,
                         Err(e) => return Err(e.raw_os_error().unwrap_or(ENOENT))
                     };
@@ -163,9 +163,9 @@ impl FilesystemMT for DecoFS {
         Ok(entries)
     }
 
-    fn releasedir(&self, _req: RequestInfo, path: &Path, _fh: u64, _flags: u32) -> ResultEmpty {
+    fn releasedir(&self, _req: RequestInfo, path: &Path, _fh: u64, flags: u32) -> ResultEmpty {
         let real = self.real_path(path);
-        debug!("opendir: {:?} {:?} (flags = {:#o})", path, real, _flags);
+        debug!("opendir: {:?} {:?} (flags = {:#o})", path, real, flags);
         Ok(())
     }
 
@@ -173,11 +173,11 @@ impl FilesystemMT for DecoFS {
         let real = self.real_path(path);
         debug!("open: {:?} {:?} flags={:#x}", path, real, flags);
 
-        match libc_wrapper::open(real, flags as libc::c_int) {
+        match libc_wrapper::open(&real, flags as libc::c_int) {
             Ok(fh) => Ok((fh, flags)),
             Err(e) => {
                 error!("readdir: {:?}: {}", path, e);
-                return Err(e.raw_os_error().unwrap_or(ENOENT));
+                Err(e.raw_os_error().unwrap_or(ENOENT))
             }
         }
     }
@@ -188,7 +188,7 @@ impl FilesystemMT for DecoFS {
             Ok(_) => Ok(()),
             Err(e) => {
                 error!("open({:?}): {}", path, e);
-                return Err(e.raw_os_error().unwrap_or(ENOENT));
+                Err(e.raw_os_error().unwrap_or(ENOENT))
             }
         }
     }

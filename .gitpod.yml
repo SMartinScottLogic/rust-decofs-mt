@@ -2,3 +2,4 @@ image:
   file: docker/Dockerfile
 tasks:
   - init: cargo build
+    command: cargo watch -x "clippy -- -W clippy::pedantic"
