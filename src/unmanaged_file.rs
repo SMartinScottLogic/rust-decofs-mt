@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{self, Read, Write, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::unix::io::{FromRawFd, IntoRawFd};
 
 /// A file that is not closed upon leaving scope.
@@ -10,15 +10,15 @@ pub struct UnmanagedFile {
 impl UnmanagedFile {
     pub unsafe fn new(fd: u64) -> Self {
         Self {
-            inner: Some(File::from_raw_fd(fd as i32))
+            inner: Some(File::from_raw_fd(fd as i32)),
         }
     }
-    pub fn sync_all(&self) -> io::Result<()> {
-        self.inner.as_ref().unwrap().sync_all()
-    }
-    pub fn sync_data(&self) -> io::Result<()> {
-        self.inner.as_ref().unwrap().sync_data()
-    }
+    // pub fn sync_all(&self) -> io::Result<()> {
+    //     self.inner.as_ref().unwrap().sync_all()
+    // }
+    // pub fn sync_data(&self) -> io::Result<()> {
+    //     self.inner.as_ref().unwrap().sync_data()
+    // }
 }
 
 impl Drop for UnmanagedFile {
